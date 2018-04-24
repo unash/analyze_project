@@ -1,5 +1,13 @@
 #!/usr/bin/python3
 
+"""
+* Function: Analyze an iOS project
+* Author: UnAsh
+* Blog: https://blog.exbye.com
+* Github: https://github.com/unash/analyze_project
+* Licence: GPL-3.0
+"""
+
 from graphviz import Digraph, Graph
 import sys
 import os
@@ -7,7 +15,7 @@ import time
 import shutil
 import re
 
-ignore_dirs = ['Pods','examples_extra','examples','Tests']
+ignore_dirs = ['Pods']
 ignore_nodes = ['NSObject']
 
 re_class_prefix = r'@interface'

@@ -16,8 +16,9 @@
 
 1. Python3.0+
 1. 安装依赖: pip install graphviz
-1. 进入 analyze_project 根目录, 运行: python3.6 ./analyze_project.py dir1 dir2
+1. 进入 analyze_project 根目录, 运行: python ./analyze_project.py dir1 dir2
 1. 其中: dir1 表示工程文件目录, dir2 表示可视化图的输出目录.
+1. 输出文件为 dir2/project.png
 
 ## 联系
 
