@@ -18,18 +18,7 @@ import re
 ignore_dirs = ['Pods']
 ignore_nodes = ['NSObject']
 
-re_class_prefix = r'@interface'
-re_protocol_prefix = r'@protocol'
-re_node_name = r'([0-9a-zA-Z_]+)'
-re_flags = re.I|re.M|re.S|re.U
-re_protocol_block = r'(\<[0-9a-zA-Z_,\s]+\>)?'
-
-# 类
-class_pattern = re.compile(re_class_prefix+r'\s+'+re_node_name+r'\s*:\s*'+re_node_name+r'\s*'+re_protocol_block,flags=re_flags)
-# 分类
-category_pattern = re.compile(re_class_prefix+r'\s+'+re_node_name+r'\s*(\('+re_node_name+r'\))?\s*'+re_protocol_block,flags=re_flags)
-# 协议
-protocol_pattern = re.compile(re_protocol_prefix+r'\s+'+re_node_name+r'\s*'+re_protocol_block,flags=re_flags)
+######################### 工具区 #########################
 
 def get_all_header_files(folder):
     """获取所有头文件"""
@@ -48,7 +37,7 @@ def get_all_header_files(folder):
 
 def is_header_file(file):
     """判断是否是头文件"""
-    return file.endswith('.h')
+    return file.endswith('.h') or file.endswith('.swift')
 
 def is_ignore_dir(folder):
     return is_in_list(ignore_dirs, folder)
@@ -62,46 +51,110 @@ def is_in_list(list, item):
             return True
     return False
 
-def analyze_class(content, class_nodes, class_edges, protocol_nodes):
-    """分析类结构"""
-    for m in class_pattern.finditer(content):
-        print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
-        class_node = m.group(1)
-        super_class_node = m.group(2)
-        protocol_list = m.group(3)
-        class_nodes.add(class_node)
-        if super_class_node!=None and len(super_class_node)>0 and not is_ignore_node(super_class_node):
-            class_edges.append([class_node, super_class_node])
-        if protocol_list!=None and len(protocol_list)>0:
-            for protocol_str in protocol_list.strip('<> ').split(','):
-                protocol_node = protocol_str.strip()
-                if len(protocol_node)>0 and not is_ignore_node(protocol_node):
-                    protocol_nodes.add(protocol_node)
-                    class_edges.append([class_node, protocol_node])
-    for m in category_pattern.finditer(content):
-        print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
-        class_node = m.group(1)
-        protocol_list = m.group(4)
-        if protocol_list!=None and len(protocol_list)>0:
-            for protocol_str in protocol_list.strip('<> ').split(','):
-                protocol_node = protocol_str.strip()
-                if len(protocol_node)>0 and not is_ignore_node(protocol_node):
-                    protocol_nodes.add(protocol_node)
-                    class_edges.append([class_node, protocol_node])
+######################### 基类区 #########################
 
-def analyze_protocol(content, protocol_nodes, protocol_edges):
-    """分析协议结构"""
-    for m in protocol_pattern.finditer(content):
-        print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
-        protocol_node = m.group(1)
-        protocol_nodes.add(protocol_node)
-        protocol_list = m.group(2)
-        if protocol_list!=None and len(protocol_list)>0:
-            for protocol_str in protocol_list.strip('<> ').split(','):
-                super_protocol_node = protocol_str.strip()
-                if len(super_protocol_node)>0 and not is_ignore_node(super_protocol_node):
-                    protocol_nodes.add(super_protocol_node)
-                    protocol_edges.append([protocol_node, super_protocol_node])
+re_flags = re.I|re.M|re.S|re.U
+re_node_name = r'([0-9a-zA-Z_]+)'
+
+class Processor:
+    def analyze_class(self, content, class_nodes, class_edges, protocol_nodes):
+        pass
+    def analyze_protocol(self, content, protocol_nodes, protocol_edges):
+        pass
+
+######################### Swift区 #########################
+
+class SwiftProcessor(Processor):
+
+    other_info_pattern = r'(\s*[:]\s*([0-9a-zA-Z_, ]+))?\s+[{]\n'
+    class_pattern = re.compile(r'class'+r'\s+'+re_node_name+other_info_pattern)
+    protocol_pattern = re.compile(r'protocol'+r'\s+'+re_node_name+other_info_pattern)
+
+    def analyze_class(self, content, class_nodes, class_edges, protocol_nodes):
+        for m in self.class_pattern.finditer(content):
+            print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
+            class_node = m.group(1)
+            class_nodes.add(class_node)
+            if len(m.groups()) == 3 and m.group(3) != None: # 有其他信息
+                componentsStr = m.group(3)
+                for index,component in enumerate(componentsStr.strip(' ').split(',')):
+                    super_node = component.strip(' ')
+                    if super_node!=None and len(super_node)>0 and not is_ignore_node(super_node):
+                        if index == 0: # 这种判断很不准确
+                            class_nodes.add(super_node)
+                        else:
+                            protocol_nodes.add(super_node)
+                        class_edges.append([class_node, super_node])
+    def analyze_protocol(self, content, protocol_nodes, protocol_edges):
+        for m in self.protocol_pattern.finditer(content):
+            print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
+            protocol_node = m.group(1)
+            protocol_nodes.add(protocol_node)
+            if len(m.groups()) == 3 and m.group(3) != None: # 有其他信息
+                componentsStr = m.group(3)
+                for index,component in enumerate(componentsStr.strip(' ').split(',')):
+                    super_node = component.strip(' ')
+                    if super_node!=None and len(super_node)>0 and not is_ignore_node(super_node):
+                        protocol_nodes.add(super_node)
+                        protocol_edges.append([protocol_node, super_node])
+
+######################### OC区 #########################
+
+class OCProcessor(Processor):
+
+    re_class_prefix = r'@interface'
+    re_protocol_prefix = r'@protocol'
+    re_protocol_block = r'(\<[0-9a-zA-Z_,\s]+\>)?'
+
+    # 类
+    class_pattern = re.compile(re_class_prefix+r'\s+'+re_node_name+r'\s*:\s*'+re_node_name+r'\s*'+re_protocol_block,flags=re_flags)
+    # 分类
+    category_pattern = re.compile(re_class_prefix+r'\s+'+re_node_name+r'\s*(\('+re_node_name+r'\))?\s*'+re_protocol_block,flags=re_flags)
+    # 协议
+    protocol_pattern = re.compile(re_protocol_prefix+r'\s+'+re_node_name+r'\s*'+re_protocol_block,flags=re_flags)
+
+    def analyze_class(self, content, class_nodes, class_edges, protocol_nodes):
+        """分析类结构"""
+        for m in self.class_pattern.finditer(content):
+            print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
+            class_node = m.group(1)
+            super_class_node = m.group(2)
+            protocol_list = m.group(3)
+            class_nodes.add(class_node)
+            if super_class_node!=None and len(super_class_node)>0 and not is_ignore_node(super_class_node):
+                class_edges.append([class_node, super_class_node])
+            if protocol_list!=None and len(protocol_list)>0:
+                for protocol_str in protocol_list.strip('<> ').split(','):
+                    protocol_node = protocol_str.strip()
+                    if len(protocol_node)>0 and not is_ignore_node(protocol_node):
+                        protocol_nodes.add(protocol_node)
+                        class_edges.append([class_node, protocol_node])
+        for m in self.category_pattern.finditer(content):
+            print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
+            class_node = m.group(1)
+            protocol_list = m.group(4)
+            if protocol_list!=None and len(protocol_list)>0:
+                for protocol_str in protocol_list.strip('<> ').split(','):
+                    protocol_node = protocol_str.strip()
+                    if len(protocol_node)>0 and not is_ignore_node(protocol_node):
+                        protocol_nodes.add(protocol_node)
+                        class_edges.append([class_node, protocol_node])
+
+    def analyze_protocol(self, content, protocol_nodes, protocol_edges):
+        """分析协议结构"""
+        for m in self.protocol_pattern.finditer(content):
+            print('%02d-%02d: %s' % (m.start(), m.end(), m.group(0)))
+            protocol_node = m.group(1)
+            protocol_nodes.add(protocol_node)
+            protocol_list = m.group(2)
+            if protocol_list!=None and len(protocol_list)>0:
+                for protocol_str in protocol_list.strip('<> ').split(','):
+                    super_protocol_node = protocol_str.strip()
+                    if len(super_protocol_node)>0 and not is_ignore_node(super_protocol_node):
+                        protocol_nodes.add(super_protocol_node)
+                        protocol_edges.append([protocol_node, super_protocol_node])
+
+######################### 主控区 #########################
 
 def main(root_path, output_path):
     """主函数"""
@@ -109,7 +162,7 @@ def main(root_path, output_path):
     print('Root Path: ', root_path)
     print('Output Path: ', output_path)
 	# Main Digraph
-    G = Digraph('image', engine='dot', strict=True, format='png')
+    G = Digraph('image', engine='dot', strict=True, format='pdf')
     G.graph_attr['label'] = 'Project Digraph'
     G.layout = 'dot'
     G.graph_attr['rankdir'] = 'LR'
@@ -121,11 +174,16 @@ def main(root_path, output_path):
     protocol_edges = [] # 协议结构
 
     files = get_all_header_files(root_path)
+    processors = {'oc':OCProcessor(), 'swift':SwiftProcessor()}
     for file in files:
+        filetype = 'oc'
+        if (file.endswith('.swift')):
+            filetype = 'swift'
+        processor = processors[filetype]
         file_handler = open(file)
         content = file_handler.read()
-        analyze_class(content, class_nodes, class_edges, protocol_nodes)
-        analyze_protocol(content, protocol_nodes, protocol_edges)
+        processor.analyze_class(content, class_nodes, class_edges, protocol_nodes)
+        processor.analyze_protocol(content, protocol_nodes, protocol_edges)
         file_handler.close()
 
     # class subgraph
